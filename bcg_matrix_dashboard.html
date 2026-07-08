@@ -1,0 +1,137 @@
+<h2 class="sr-only">Interactive BCG growth-share matrix: add business units with market growth rate and relative market share, plotted live into Stars, Question Marks, Cash Cows, and Dogs quadrants.</h2>
+
+<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem">
+  <p style="font-weight:500;font-size:15px;margin:0 0 12px">Add a business unit / product</p>
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:10px;align-items:end">
+    <div>
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Name</label>
+      <input id="in-name" type="text" placeholder="e.g. Product line A" style="width:100%">
+    </div>
+    <div>
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Market growth %</label>
+      <input id="in-growth" type="number" min="0" max="40" step="0.5" placeholder="0-40" style="width:100%">
+    </div>
+    <div>
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Relative share</label>
+      <input id="in-share" type="number" min="0" max="3" step="0.1" placeholder="0-3" style="width:100%">
+    </div>
+    <div>
+      <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">Revenue (optional)</label>
+      <input id="in-revenue" type="number" min="0" step="1" placeholder="bubble size" style="width:100%">
+    </div>
+    <button onclick="addItem()" style="height:36px;white-space:nowrap"><i class="ti ti-plus" style="font-size:16px;vertical-align:-2px;margin-right:4px" aria-hidden="true"></i>Add</button>
+  </div>
+  <p style="font-size:12px;color:var(--text-muted);margin:8px 0 0">Relative market share is your share divided by your largest competitor's share — 1.0 means you're tied with the leader.</p>
+</div>
+
+<svg width="100%" viewBox="0 0 680 480" id="bcg-svg" role="img" aria-label="BCG matrix scatter plot"></svg>
+
+<div id="item-list" style="margin-top:1.25rem"></div>
+
+<script>
+let items = [];
+let nextId = 1;
+
+function addItem(){
+  const name = document.getElementById('in-name').value.trim();
+  const growth = parseFloat(document.getElementById('in-growth').value);
+  const share = parseFloat(document.getElementById('in-share').value);
+  const revenue = parseFloat(document.getElementById('in-revenue').value);
+  if(!name || isNaN(growth) || isNaN(share)){
+    return;
+  }
+  items.push({id:nextId++, name, growth: Math.max(0, Math.min(40, growth)), share: Math.max(0, Math.min(3, share)), revenue: isNaN(revenue) ? null : revenue});
+  document.getElementById('in-name').value = '';
+  document.getElementById('in-growth').value = '';
+  document.getElementById('in-share').value = '';
+  document.getElementById('in-revenue').value = '';
+  renderAll();
+}
+
+function removeItem(id){
+  items = items.filter(it => it.id !== id);
+  renderAll();
+}
+
+function quadrantOf(it){
+  if(it.share >= 1 && it.growth >= 10) return {label:'Star', ramp:'c-teal'};
+  if(it.share < 1 && it.growth >= 10) return {label:'Question mark', ramp:'c-amber'};
+  if(it.share >= 1 && it.growth < 10) return {label:'Cash cow', ramp:'c-blue'};
+  return {label:'Dog', ramp:'c-coral'};
+}
+
+function renderChart(){
+  const w = 680, h = 480, pad = 60;
+  const plotW = w - 2*pad, plotH = h - 2*pad;
+  const growthMax = 40, shareMax = 3;
+  const xPix = share => pad + (1 - share/shareMax) * plotW;
+  const yPix = growth => pad + (1 - growth/growthMax) * plotH;
+  const midX = xPix(1);
+  const midY = yPix(10);
+
+  const revs = items.map(it => it.revenue).filter(r => r != null && r > 0);
+  const maxRev = revs.length ? Math.max(...revs) : 0;
+  const radiusFor = it => {
+    if(!it.revenue || !maxRev) return 10;
+    return 8 + (it.revenue / maxRev) * 22;
+  };
+
+  let svg = `
+    <rect x="${pad}" y="${pad}" width="${midX-pad}" height="${midY-pad}" class="c-teal" opacity="0.15"/>
+    <rect x="${midX}" y="${pad}" width="${pad+plotW-midX}" height="${midY-pad}" class="c-amber" opacity="0.15"/>
+    <rect x="${pad}" y="${midY}" width="${midX-pad}" height="${pad+plotH-midY}" class="c-blue" opacity="0.15"/>
+    <rect x="${midX}" y="${midY}" width="${pad+plotW-midX}" height="${pad+plotH-midY}" class="c-coral" opacity="0.15"/>
+    <line x1="${midX}" y1="${pad}" x2="${midX}" y2="${pad+plotH}" stroke="var(--border-strong)" stroke-width="0.5"/>
+    <line x1="${pad}" y1="${midY}" x2="${pad+plotW}" y2="${midY}" stroke="var(--border-strong)" stroke-width="0.5"/>
+    <rect x="${pad}" y="${pad}" width="${plotW}" height="${plotH}" fill="none" stroke="var(--border)" stroke-width="0.5"/>
+    <text class="th" x="${pad+18}" y="${pad+22}">Stars</text>
+    <text class="th" x="${pad+plotW-18}" y="${pad+22}" text-anchor="end">Question marks</text>
+    <text class="th" x="${pad+18}" y="${pad+plotH-12}">Cash cows</text>
+    <text class="th" x="${pad+plotW-18}" y="${pad+plotH-12}" text-anchor="end">Dogs</text>
+    <text class="ts" x="${pad+plotW/2}" y="${h-18}" text-anchor="middle">Relative market share</text>
+    <text class="ts" x="${pad-45}" y="${pad+plotH/2}" text-anchor="middle" transform="rotate(-90 ${pad-45} ${pad+plotH/2})">Market growth rate</text>
+    <text class="ts" x="${pad}" y="${pad+plotH+16}" text-anchor="middle">${shareMax}</text>
+    <text class="ts" x="${pad+plotW}" y="${pad+plotH+16}" text-anchor="middle">0</text>
+    <text class="ts" x="${pad-10}" y="${pad+plotH}" text-anchor="end">0%</text>
+    <text class="ts" x="${pad-10}" y="${pad}" text-anchor="end">${growthMax}%</text>`;
+
+  items.forEach(it => {
+    const q = quadrantOf(it);
+    const x = xPix(Math.min(it.share, shareMax));
+    const y = yPix(Math.min(it.growth, growthMax));
+    const r = radiusFor(it);
+    svg += `<g class="node ${q.ramp}" onclick="removeItem(${it.id})">
+      <circle cx="${x}" cy="${y}" r="${r}" stroke-width="1" opacity="0.9"/>
+      <text class="ts" x="${x}" y="${y - r - 6}" text-anchor="middle">${it.name}</text>
+    </g>`;
+  });
+
+  document.getElementById('bcg-svg').innerHTML = svg;
+}
+
+function renderList(){
+  const el = document.getElementById('item-list');
+  if(items.length === 0){
+    el.innerHTML = `<p style="font-size:13px;color:var(--text-muted)">No business units added yet.</p>`;
+    return;
+  }
+  el.innerHTML = `<p style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">Click a bubble, or the trash icon, to remove an entry.</p>` +
+    items.map(it => {
+      const q = quadrantOf(it);
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:6px">
+        <div>
+          <span style="font-size:14px;font-weight:500">${it.name}</span>
+          <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">${q.label} · growth ${it.growth}% · share ${it.share}${it.revenue?(' · rev '+it.revenue):''}</span>
+        </div>
+        <button onclick="removeItem(${it.id})" aria-label="Remove ${it.name}" style="padding:4px 8px"><i class="ti ti-trash" style="font-size:16px" aria-hidden="true"></i></button>
+      </div>`;
+    }).join('');
+}
+
+function renderAll(){
+  renderChart();
+  renderList();
+}
+
+renderAll();
+</script>
